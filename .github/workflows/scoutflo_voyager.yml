@@ -68,13 +68,13 @@ jobs:
             cd ~/langfuse
 
             # Pull latest images
-            docker-compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml pull
 
             # Stop and remove existing containers
-            docker-compose -f docker-compose.prod.yml down
+            docker compose -f docker-compose.prod.yml down
 
             # Start services
-            docker-compose -f docker-compose.prod.yml up -d
+            docker compose -f docker-compose.prod.yml up -d
 
             # Clean up old images
             docker system prune -f
