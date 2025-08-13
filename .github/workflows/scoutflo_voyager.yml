@@ -1,0 +1,92 @@
+name: Deploy Langfuse to GCP VM (Optimized - Hosted Services)
+
+on:
+  push:
+    branches:
+      - release/voyager-main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy to"
+        type: choice
+        options:
+          - staging
+          - production
+        required: true
+        default: staging
+
+jobs:
+  deploy-to-gcp:
+    name: Deploy Langfuse to GCP VM
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Prepare Docker Compose File
+        run: |
+          # Copy the voyager compose file
+          cp docker-compose.voyager.yml docker-compose.prod.yml
+
+      - name: Create Environment File
+        run: |
+          cat > .env << 'EOF'
+          # Core Langfuse Configuration
+          NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
+          SALT=${{ secrets.SALT }}
+          ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
+
+          # Database Configuration (Your hosted PostgreSQL)
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+
+          # Redis Configuration (Your hosted Redis)
+          REDIS_HOST=${{ secrets.REDIS_HOST }}
+          REDIS_PORT=${{ secrets.REDIS_PORT }}
+          REDIS_AUTH=${{ secrets.REDIS_AUTH }}
+
+          # Minio Configuration
+          MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
+
+          EOF
+
+      - name: SSH into GCP VM and Deploy
+        env:
+          GCP_VM_IP: ${{ secrets.GCP_VM_IP }}
+          GCP_VM_USER: ${{ secrets.GCP_VM_USER }}
+          PRIVATE_KEY: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+        run: |
+          echo "$PRIVATE_KEY" > private_key.pem
+          chmod 600 private_key.pem
+
+          # Copy files to VM
+          scp -o StrictHostKeyChecking=no -i private_key.pem docker-compose.prod.yml .env $GCP_VM_USER@$GCP_VM_IP:~/langfuse/
+
+          # Deploy on VM
+          ssh -o StrictHostKeyChecking=no -i private_key.pem $GCP_VM_USER@$GCP_VM_IP << EOF
+            cd ~/langfuse
+
+            # Pull latest images
+            docker-compose -f docker-compose.prod.yml pull
+
+            # Stop and remove existing containers
+            docker-compose -f docker-compose.prod.yml down
+
+            # Start services
+            docker-compose -f docker-compose.prod.yml up -d
+
+            # Clean up old images
+            docker system prune -f
+
+            # Wait for services to be ready
+            sleep 30
+
+            # Health check
+            curl -f http://localhost:3000/api/public/health || exit 1
+            curl -f http://localhost:3030/api/health || exit 1
+
+            echo "Langfuse deployment completed successfully!"
+          EOF
+
+          rm private_key.pem
