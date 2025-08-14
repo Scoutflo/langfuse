@@ -80,11 +80,21 @@ jobs:
             docker system prune -f
 
             # Wait for services to be ready
-            sleep 30
+            sleep 60
 
-            # Health check
-            curl -f http://localhost:3000/api/public/health || exit 1
-            curl -f http://localhost:3030/api/health || exit 1
+            # Health check with retry
+            for i in {1..5}; do
+              echo "Health check attempt $i/5..."
+              if curl -f http://localhost:3000/api/public/health && curl -f http://localhost:3030/api/health; then
+                echo "Health checks passed!"
+                break
+              fi
+              if [ $i -eq 5 ]; then
+                echo "Health checks failed after 5 attempts"
+                exit 1
+              fi
+              sleep 30
+            done
 
             echo "Langfuse deployment completed successfully!"
           EOF
