@@ -49,6 +49,11 @@ jobs:
           # Minio Configuration
           MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
 
+          # Langfuse Configuration
+          LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${{ secrets.LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY }}
+          LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY=${{ secrets.LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY }}
+          LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY=${{ secrets.LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY }}
+
           EOF
 
       - name: SSH into GCP VM and Deploy
