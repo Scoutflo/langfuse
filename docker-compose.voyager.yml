@@ -63,10 +63,8 @@ services:
     image: docker.io/langfuse/langfuse:sha-7e31dda
     restart: always
     depends_on: *langfuse-depends-on
-    networks:
-      default:
-        aliases:
-          - langfuse-web
+    ports:
+      - 3000:3000
     environment:
       <<: *langfuse-worker-env
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
