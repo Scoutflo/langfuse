@@ -41,7 +41,7 @@ jobs:
           # Database Configuration (Your hosted PostgreSQL)
           DATABASE_URL=${{ secrets.DATABASE_URL }}
 
-          # Redis Configuration (Your hosted Redis)
+          # Redis Configuration (Your hosted Redis - DO)
           REDIS_HOST=${{ secrets.REDIS_HOST }}
           REDIS_PORT=${{ secrets.REDIS_PORT }}
           REDIS_AUTH=${{ secrets.REDIS_AUTH }}
