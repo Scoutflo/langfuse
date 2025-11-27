@@ -45,6 +45,7 @@ jobs:
           REDIS_HOST=${{ secrets.REDIS_HOST }}
           REDIS_PORT=${{ secrets.REDIS_PORT }}
           REDIS_AUTH=${{ secrets.REDIS_AUTH }}
+          REDIS_TLS_ENABLED=true
 
           # Minio Configuration
           MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
