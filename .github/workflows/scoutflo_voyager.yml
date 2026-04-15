@@ -20,89 +20,96 @@ jobs:
     name: Deploy Langfuse to GCP VM
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Prepare Docker Compose File
+      - id: 'auth'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: '${{ secrets.GCP_WIF_PROVIDER }}'
+          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
+
+      - name: Set up Cloud SDK
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: Prepare Deployment Files
         run: |
           # Copy the voyager compose file
           cp docker-compose.voyager.yml docker-compose.prod.yml
-
-      - name: Create Environment File
-        run: |
-          cat > .env << 'EOF'
-          # Core Langfuse Configuration
+          
+          # Create environment file locally
+          cat <<EOF > .env
           NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
           SALT=${{ secrets.SALT }}
           ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
-
-          # Database Configuration (Your hosted PostgreSQL)
           DATABASE_URL=${{ secrets.DATABASE_URL }}
-
-          # Redis Configuration (Your hosted Redis - DO)
           REDIS_HOST=${{ secrets.REDIS_HOST }}
           REDIS_PORT=${{ secrets.REDIS_PORT }}
           REDIS_AUTH=${{ secrets.REDIS_AUTH }}
           REDIS_TLS_ENABLED=true
-
-          # Minio Configuration
           MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
-
-          # Langfuse Configuration
           LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${{ secrets.LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY }}
           LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY=${{ secrets.LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY }}
           LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY=${{ secrets.LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY }}
-
           EOF
+
+      - name: Copy files to VM via IAP
+        run: |
+          # Ensure directory exists on VM
+          gcloud compute ssh langfuse-prod --zone="asia-south2-a" --tunnel-through-iap --quiet --command="mkdir -p ~/langfuse"
+          
+          # Copy files
+          gcloud compute scp --quiet --tunnel-through-iap --zone="asia-south2-a" \
+            docker-compose.prod.yml .env langfuse-prod:~/langfuse/
 
       - name: SSH into GCP VM and Deploy
-        env:
-          GCP_VM_IP: ${{ secrets.GCP_VM_IP }}
-          GCP_VM_USER: ${{ secrets.GCP_VM_USER }}
-          PRIVATE_KEY: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
         run: |
-          echo "$PRIVATE_KEY" > private_key.pem
-          chmod 600 private_key.pem
+          gcloud compute ssh langfuse-prod \
+            --quiet \
+            --zone="asia-south2-a" \
+            --tunnel-through-iap \
+            --command="
+              cd ~/langfuse
 
-          # Copy files to VM
-          scp -o StrictHostKeyChecking=no -i private_key.pem docker-compose.prod.yml .env $GCP_VM_USER@$GCP_VM_IP:~/langfuse/
-
-          # Deploy on VM
-          ssh -o StrictHostKeyChecking=no -i private_key.pem $GCP_VM_USER@$GCP_VM_IP << EOF
-            cd ~/langfuse
-
-            # Pull latest images
-            docker compose -f docker-compose.prod.yml pull
-
-            # Stop and remove existing containers
-            docker compose -f docker-compose.prod.yml down
-
-            # Start services
-            docker compose -f docker-compose.prod.yml up -d
-
-            # Clean up old images
-            docker system prune -f
-
-            # Wait for services to be ready
-            sleep 60
-
-            # Health check with retry
-            for i in {1..5}; do
-              echo "Health check attempt $i/5..."
-              if curl -f http://localhost:3000/api/public/health && curl -f http://localhost:3030/api/health; then
-                echo "Health checks passed!"
-                break
+              # 1. Grant docker permissions
+              if ! groups | grep -q 'docker'; then
+                sudo usermod -aG docker \$USER
               fi
-              if [ $i -eq 5 ]; then
-                echo "Health checks failed after 5 attempts"
-                exit 1
-              fi
-              sleep 30
-            done
 
-            echo "Langfuse deployment completed successfully!"
-          EOF
+              # 2. Pull latest images
+              sudo docker compose -f docker-compose.prod.yml pull
 
-          rm private_key.pem
+              # 3. Stop and remove existing containers
+              sudo docker compose -f docker-compose.prod.yml down
+
+              # 4. Start services
+              sudo docker compose -f docker-compose.prod.yml up -d
+
+              # 5. Clean up old images
+              sudo docker system prune -f
+
+              # 6. Wait for services to be ready
+              echo 'Waiting for services to be ready...'
+              sleep 60
+
+              # 7. Health check with retry
+              for i in {1..5}; do
+                echo \"Health check attempt \$i/5...\"
+                if curl -f http://localhost:3000/api/public/health && curl -f http://localhost:3030/api/health; then
+                  echo \"Health checks passed!\"
+                  break
+                fi
+                if [ \$i -eq 5 ]; then
+                  echo \"Health checks failed after 5 attempts\"
+                  exit 1
+                fi
+                sleep 30
+              done
+
+              echo \"Langfuse deployment completed successfully!\"
+            "
